@@ -328,7 +328,7 @@ subscription_create_from_channel(channel_t *ch, unsigned int weight,
   if(s->ths_service == NULL) {
     tvhlog(LOG_NOTICE, "subscription", 
 	   "No transponder available for subscription \"%s\" "
-	   "to channel \"%s\"",
+	   "to channel \"%s\": is your tuner plugged in?",
 	   s->ths_title, ch->ch_name);
   } else {
     source_info_t si;
