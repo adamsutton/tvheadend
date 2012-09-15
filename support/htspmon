@@ -25,7 +25,6 @@ from optparse import OptionParser
 # System path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib', 'py'))
 import tvh
-print sys.path
 
 # TVH imports
 from tvh.htsp import HTSPClient
@@ -49,6 +48,7 @@ try:
   htsp = HTSPClient((opts.host, opts.port))
   msg  = htsp.hello()
   log.info('connected to %s [%s]' % (msg['servername'], msg['serverversion']))
+  log.info('using protocol v%d' % htsp._version)
 
   # Authenticate
   if opts.user:
@@ -56,7 +56,7 @@ try:
     log.info('authenticated as %s' % opts.user)
 
   # Enable async
-  htsp.enableAsyncMetadata()
+  htsp.enableAsyncMetadata({'epg':1})
   log.info('enabled async data')
 
   # Process messages
