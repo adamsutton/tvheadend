@@ -1,0 +1,40 @@
+{
+    "connection-error": "Se ha detectado un error durante la conexión.",
+    "connecting": "Conectando. Espere, por favor.",
+    "channel-tags": "Etiquetas de canal",
+    "channels": "Canales",
+    "guide": "Guía",
+    "configure": "Configurar",
+    "configuration": "Configuración",
+    "back": "Volver",
+    "refresh": "Refrescar",
+    "retry": "Reintentar",
+    "by-number": "Por número",
+    "by-name": "Por nombre",
+    "by-date-time": "Por fecha/hora",
+    "by-channel": "Por canal",
+    "no-data": "No hay datos",
+    "n-a": "N/A",
+    "tvheadend-ip": "IP de TVheadend",
+    "port": "Puerto",
+    "link-type": "Tipo de enlace",
+    "language": "Idioma",
+    "stream-description": "Este es el valor recomendado para dispositivos móviles",
+    "playlist-description": "Pruebe este valor si \"stream\" no funciona",
+    "defaults": "Por defecto",
+    "save": "Guardar",
+    "epg-event": "Evento", 
+    "watch-channel": "Ver canal",
+    
+    "Now playing": "Ahora",
+    "About to start": "A punto de empezar",
+    "Starts in less than 30 minutes": "Empieza en menos de 30 minutos",
+    "Starts during next hour": "Empieza en la próxima hora",
+    "Later": "Más tarde",
+    
+    "error": {
+       "fill-all": "ERROR: Rellene todos los campos",
+       "invalid-ip": "ERROR: No es una IP válida",
+       "invalid-port": "ERROR: No es un puerto válido"
+       }
+}
