@@ -112,7 +112,14 @@ page_static_file(http_connection_t *hc, const char *remain, void *opaque)
       content = "text/css; charset=UTF-8";
   }
 
-  // TODO: handle compression
+  fb_dir *dp = fb_opendir(path);
+  if (dp) {
+    fb_closedir(dp);
+    snprintf(path, sizeof(path), "/static/%s/index.html", remain);
+    http_redirect(hc, path);
+    return 0;
+  }
+
   fb_file *fp = fb_open(path, 0, 1);
   if (!fp) {
     tvhlog(LOG_ERR, "webui", "failed to open %s", path);
