@@ -935,7 +935,6 @@ webui_init(void)
   webui_static_content("/docs",          "docs/html");
   webui_static_content("/docresources",  "docs/docresources");
 
-  simpleui_start();
   extjs_start();
   comet_init();
 

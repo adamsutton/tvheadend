@@ -132,7 +132,6 @@ SRCS += src/dvr/dvr_db.c \
 SRCS += src/webui/webui.c \
 	src/webui/comet.c \
 	src/webui/extjs.c \
-	src/webui/simpleui.c \
 	src/webui/statedump.c \
 	src/webui/html.c\
 
