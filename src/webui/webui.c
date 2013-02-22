@@ -108,15 +108,15 @@ page_static_file(http_connection_t *hc, const char *remain, void *opaque)
   char buf[4096];
   const char *gzip;
 
-  if(remain == NULL)
-    return 404;
-
-  if(strstr(remain, ".."))
+  if(remain && strstr(remain, ".."))
     return HTTP_STATUS_BAD_REQUEST;
 
-  snprintf(path, sizeof(path), "%s/%s", base, remain);
+  if (remain)
+    snprintf(path, sizeof(path), "%s/%s", base, remain);
+  else
+    strncpy(path, base, sizeof(path));
 
-  postfix = strrchr(remain, '.');
+  postfix = strrchr(path, '.');
   if(postfix != NULL) {
     postfix++;
     if(!strcmp(postfix, "js"))
@@ -932,8 +932,7 @@ page_imagecache(http_connection_t *hc, const char *remain, void *opaque)
 static void
 webui_static_content(const char *http_path, const char *source)
 {
-  http_path_add(http_path, strdup(source), page_static_file,
-    ACCESS_WEB_INTERFACE);
+  http_path_add(http_path, (char*)source, page_static_file, ACCESS_WEB_INTERFACE);
 }
 
 
@@ -960,6 +959,10 @@ webui_init(void)
 
   http_path_add("", NULL, page_root2, ACCESS_WEB_INTERFACE);
   http_path_add("/", NULL, page_root, ACCESS_WEB_INTERFACE);
+
+  webui_static_content("/mobile.html", "src/webui/static/mobile/index.html");
+  webui_static_content("/epg.html", "src/webui/static/mobile/epg.html");
+  webui_static_content("/mobile", "src/webui/static/mobile");
 
   http_path_add("/dvrfile", NULL, page_dvrfile, ACCESS_WEB_INTERFACE);
   http_path_add("/favicon.ico", NULL, favicon, ACCESS_WEB_INTERFACE);
