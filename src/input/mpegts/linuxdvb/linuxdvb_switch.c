@@ -144,13 +144,14 @@ linuxdvb_switch_tune
       return -1;
     usleep(25000);
 
+    /* First commited command already sent - repeat flag on */
+    if (sc->ls_diseqc_repeats > 0)
+      r = 1;
+
     /* Committed */
-    if (linuxdvb_diseqc_send(fd, 0xE1, 0x10, 0x38, 1, com))
+    if (linuxdvb_diseqc_send(fd, 0xE0 | r, 0x10, 0x38, 1, com))
       return -1;
     usleep(25000);
-
-    /* repeat flag */
-    r = 1;
   }
 
   /* Tone burst */
