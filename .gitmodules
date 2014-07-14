@@ -1,0 +1,3 @@
+[submodule "3rd-party/mobileui"]
+	path = 3rd-party/mobileui
+	url = git@github.com:adamsutton/TvheadendMobileUI.git
