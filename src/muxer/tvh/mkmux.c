@@ -675,7 +675,8 @@ _mk_build_metadata(const dvr_entry_t *de, const epg_broadcast_t *ebc)
     addtag(q, build_tag_string("CONTENT_TYPE", ctype, NULL, 0, NULL));
 
   if(ch)
-    addtag(q, build_tag_string("TVCHANNEL", ch->ch_name, NULL, 0, NULL));
+    addtag(q, build_tag_string("TVCHANNEL", 
+                               channel_get_name(ch), NULL, 0, NULL));
 
   if(de && de->de_desc)
     ls = de->de_desc;
@@ -1040,7 +1041,7 @@ mk_mux_open_file(mk_mux_t *mkm, const char *filename)
 {
   int fd;
 
-  fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+  fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   if(fd < 0) {
     mkm->error = errno;
     tvhlog(LOG_ERR, "mkv", "%s: Unable to create file, open failed -- %s",

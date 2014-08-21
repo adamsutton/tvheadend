@@ -36,17 +36,16 @@
 #include "webui.h"
 #include "dvr/dvr.h"
 #include "filebundle.h"
-#include "psi.h"
+#include "streaming.h"
 #include "plumbing/tsfix.h"
 #include "plumbing/globalheaders.h"
 #include "plumbing/transcoding.h"
 #include "epg.h"
 #include "muxer.h"
-#include "dvb/dvb.h"
-#include "dvb/dvb_support.h"
 #include "imagecache.h"
 #include "tcp.h"
 #include "config2.h"
+#include "atomic.h"
 
 #if defined(PLATFORM_LINUX)
 #include <sys/sendfile.h>
@@ -110,7 +109,7 @@ http_get_transcoder_properties(struct http_arg_list *args,
   if ((s = http_arg_get(args, "language")))
     strncpy(props->tp_language, s, 3);
   else
-    strncpy(props->tp_language, config_get_language(), 3);
+    strncpy(props->tp_language, config_get_language() ?: "", 3);
 
   if ((s = http_arg_get(args, "vcodec")))
     props->tp_vcodec = streaming_component_txt2type(s);
@@ -220,7 +219,8 @@ page_static_file(http_connection_t *hc, const char *remain, void *opaque)
  */
 static void
 http_stream_run(http_connection_t *hc, streaming_queue_t *sq,
-		const char *name, muxer_container_type_t mc)
+		const char *name, muxer_container_type_t mc,
+                th_subscription_t *s, muxer_config_t *mcfg)
 {
   streaming_message_t *sm;
   int run = 1;
@@ -232,7 +232,7 @@ http_stream_run(http_connection_t *hc, streaming_queue_t *sq,
   int err = 0;
   socklen_t errlen = sizeof(err);
 
-  mux = muxer_create(mc);
+  mux = muxer_create(mc, mcfg);
   if(muxer_open_stream(mux, hc->hc_fd))
     run = 0;
 
@@ -241,7 +241,7 @@ http_stream_run(http_connection_t *hc, streaming_queue_t *sq,
   tp.tv_usec = 0;
   setsockopt(hc->hc_fd, SOL_SOCKET, SO_SNDTIMEO, &tp, sizeof(tp));
 
-  while(run) {
+  while(run && tvheadend_running) {
     pthread_mutex_lock(&sq->sq_mutex);
     sm = TAILQ_FIRST(&sq->sq_queue);
     if(sm == NULL) {      
@@ -274,6 +274,12 @@ http_stream_run(http_connection_t *hc, streaming_queue_t *sq,
     case SMT_MPEGTS:
     case SMT_PACKET:
       if(started) {
+        pktbuf_t *pb;;
+        if (sm->sm_type == SMT_PACKET)
+          pb = ((th_pkt_t*)sm->sm_data)->pkt_payload;
+        else
+          pb = sm->sm_data;
+        atomic_add(&s->ths_bytes_out, pktbuf_len(pb));
         muxer_write_pkt(mux, sm->sm_type, sm->sm_data);
         sm->sm_data = NULL;
       }
@@ -361,10 +367,10 @@ http_channel_playlist(http_connection_t *hc, channel_t *channel)
   hq = &hc->hc_reply;
   host = http_arg_get(&hc->hc_args, "Host");
 
-  snprintf(buf, sizeof(buf), "/stream/channelid/%d", channel->ch_id);
+  snprintf(buf, sizeof(buf), "/stream/channelid/%d", channel_get_id(channel));
 
   htsbuf_qprintf(hq, "#EXTM3U\n");
-  htsbuf_qprintf(hq, "#EXTINF:-1,%s\n", channel->ch_name);
+  htsbuf_qprintf(hq, "#EXTINF:-1,%s\n", channel_get_name(channel));
   htsbuf_qprintf(hq, "http://%s%s?ticket=%s", host, buf, 
      access_ticket_create(buf));
 
@@ -412,8 +418,8 @@ http_tag_playlist(http_connection_t *hc, channel_tag_t *tag)
 
   htsbuf_qprintf(hq, "#EXTM3U\n");
   LIST_FOREACH(ctm, &tag->ct_ctms, ctm_tag_link) {
-    snprintf(buf, sizeof(buf), "/stream/channelid/%d", ctm->ctm_channel->ch_id);
-    htsbuf_qprintf(hq, "#EXTINF:-1,%s\n", ctm->ctm_channel->ch_name);
+    snprintf(buf, sizeof(buf), "/stream/channelid/%d", channel_get_id(ctm->ctm_channel));
+    htsbuf_qprintf(hq, "#EXTINF:-1,%s\n", channel_get_name(ctm->ctm_channel));
     htsbuf_qprintf(hq, "http://%s%s?ticket=%s\n", host, buf, 
        access_ticket_create(buf));
   }
@@ -470,10 +476,10 @@ http_channel_list_playlist(http_connection_t *hc)
   host = http_arg_get(&hc->hc_args, "Host");
 
   htsbuf_qprintf(hq, "#EXTM3U\n");
-  RB_FOREACH(ch, &channel_name_tree, ch_name_link) {
-    snprintf(buf, sizeof(buf), "/stream/channelid/%d", ch->ch_id);
+  CHANNEL_FOREACH(ch) {
+    snprintf(buf, sizeof(buf), "/stream/channelid/%d", channel_get_id(ch));
 
-    htsbuf_qprintf(hq, "#EXTINF:-1,%s\n", ch->ch_name);
+    htsbuf_qprintf(hq, "#EXTINF:-1,%s\n", channel_get_name(ch));
     htsbuf_qprintf(hq, "http://%s%s?ticket=%s\n", host, buf, 
        access_ticket_create(buf));
   }
@@ -604,9 +610,11 @@ page_http_playlist(http_connection_t *hc, const char *remain, void *opaque)
   pthread_mutex_lock(&global_lock);
 
   if(nc == 2 && !strcmp(components[0], "channelid"))
-    ch = channel_find_by_identifier(atoi(components[1]));
+    ch = channel_find_by_id(atoi(components[1]));
+  else if(nc == 2 && !strcmp(components[0], "channelnumber"))
+    ch = channel_find_by_number(atoi(components[1]));
   else if(nc == 2 && !strcmp(components[0], "channel"))
-    ch = channel_find_by_name(components[1], 0, 0);
+    ch = channel_find(components[1]);
   else if(nc == 2 && !strcmp(components[0], "dvrid"))
     de = dvr_entry_find_by_id(atoi(components[1]));
   else if(nc == 2 && !strcmp(components[0], "tagid"))
@@ -643,7 +651,7 @@ page_http_playlist(http_connection_t *hc, const char *remain, void *opaque)
  * Subscribes to a service and starts the streaming loop
  */
 static int
-http_stream_service(http_connection_t *hc, service_t *service)
+http_stream_service(http_connection_t *hc, service_t *service, int weight)
 {
   streaming_queue_t sq;
   th_subscription_t *s;
@@ -657,12 +665,16 @@ http_stream_service(http_connection_t *hc, service_t *service)
   size_t qsize;
   const char *name;
   char addrbuf[50];
+  muxer_config_t m_cfg;
 
+  cfg = dvr_config_find_by_name_default("");
+
+  /* Build muxer config - this takes the defaults from the default dvr config, which is a hack */
   mc = muxer_container_txt2type(http_arg_get(&hc->hc_req_args, "mux"));
   if(mc == MC_UNKNOWN) {
-    cfg = dvr_config_find_by_name_default("");
     mc = cfg->dvr_mc;
   }
+  m_cfg.dvr_flags = cfg->dvr_mux_flags;
 
   if ((str = http_arg_get(&hc->hc_req_args, "qsize")))
     qsize = atoll(str);
@@ -684,15 +696,15 @@ http_stream_service(http_connection_t *hc, service_t *service)
   }
 
   tcp_get_ip_str((struct sockaddr*)hc->hc_peer, addrbuf, 50);
-  s = subscription_create_from_service(service, "HTTP", st, flags,
+
+  s = subscription_create_from_service(service, weight ?: 100, "HTTP", st, flags,
 				       addrbuf,
 				       hc->hc_username,
 				       http_arg_get(&hc->hc_args, "User-Agent"));
   if(s) {
-    name = tvh_strdupa(service->s_ch ?
-                   service->s_ch->ch_name : service->s_nicename);
+    name = tvh_strdupa(service->s_nicename);
     pthread_mutex_unlock(&global_lock);
-    http_stream_run(hc, &sq, name, mc);
+    http_stream_run(hc, &sq, name, mc, s, &m_cfg);
     pthread_mutex_lock(&global_lock);
     subscription_unsubscribe(s);
   }
@@ -708,13 +720,15 @@ http_stream_service(http_connection_t *hc, service_t *service)
   return 0;
 }
 
-
 /**
- * Subscribes to a service and starts the streaming loop
+ * Subscribe to a mux for grabbing a raw dump
+ *
+ * TODO: can't currently force this to be on a particular input
  */
-#if ENABLE_LINUXDVB
+#if ENABLE_MPEGTS
+#include "src/input/mpegts.h"
 static int
-http_stream_tdmi(http_connection_t *hc, th_dvb_mux_instance_t *tdmi)
+http_stream_mux(http_connection_t *hc, mpegts_mux_t *mm, int weight)
 {
   th_subscription_t *s;
   streaming_queue_t sq;
@@ -723,13 +737,16 @@ http_stream_tdmi(http_connection_t *hc, th_dvb_mux_instance_t *tdmi)
   streaming_queue_init(&sq, SMT_PACKET);
 
   tcp_get_ip_str((struct sockaddr*)hc->hc_peer, addrbuf, 50);
-  s = dvb_subscription_create_from_tdmi(tdmi, "HTTP", &sq.sq_st,
-					addrbuf,
-					hc->hc_username,
-					http_arg_get(&hc->hc_args, "User-Agent"));
-  name = tvh_strdupa(tdmi->tdmi_identifier);
+  s = subscription_create_from_mux(mm, weight ?: 10, "HTTP", &sq.sq_st,
+                                   SUBSCRIPTION_RAW_MPEGTS |
+                                   SUBSCRIPTION_FULLMUX,
+                                   addrbuf, hc->hc_username,
+                                   http_arg_get(&hc->hc_args, "User-Agent"), NULL);
+  if (!s)
+    return HTTP_STATUS_BAD_REQUEST;
+  name = tvh_strdupa(s->ths_title);
   pthread_mutex_unlock(&global_lock);
-  http_stream_run(hc, &sq, name, MC_RAW);
+  http_stream_run(hc, &sq, name, MC_RAW, s, NULL);
   pthread_mutex_lock(&global_lock);
   subscription_unsubscribe(s);
 
@@ -739,12 +756,11 @@ http_stream_tdmi(http_connection_t *hc, th_dvb_mux_instance_t *tdmi)
 }
 #endif
 
-
 /**
  * Subscribes to a channel and starts the streaming loop
  */
 static int
-http_stream_channel(http_connection_t *hc, channel_t *ch)
+http_stream_channel(http_connection_t *hc, channel_t *ch, int weight)
 {
   streaming_queue_t sq;
   th_subscription_t *s;
@@ -755,19 +771,22 @@ http_stream_channel(http_connection_t *hc, channel_t *ch)
   streaming_target_t *tr = NULL;
 #endif
   dvr_config_t *cfg;
-  int priority = 100;
   int flags;
   muxer_container_type_t mc;
   char *str;
   size_t qsize;
   const char *name;
   char addrbuf[50];
+  muxer_config_t m_cfg;
 
+  cfg = dvr_config_find_by_name_default("");
+
+  /* Build muxer config - this takes the defaults from the default dvr config, which is a hack */
   mc = muxer_container_txt2type(http_arg_get(&hc->hc_req_args, "mux"));
   if(mc == MC_UNKNOWN) {
-    cfg = dvr_config_find_by_name_default("");
     mc = cfg->dvr_mc;
   }
+  m_cfg.dvr_flags = cfg->dvr_mux_flags;
 
   if ((str = http_arg_get(&hc->hc_req_args, "qsize")))
     qsize = atoll(str);
@@ -797,15 +816,15 @@ http_stream_channel(http_connection_t *hc, channel_t *ch)
   }
 
   tcp_get_ip_str((struct sockaddr*)hc->hc_peer, addrbuf, 50);
-  s = subscription_create_from_channel(ch, priority, "HTTP", st, flags,
+  s = subscription_create_from_channel(ch, weight ?: 100, "HTTP", st, flags,
                addrbuf,
                hc->hc_username,
                http_arg_get(&hc->hc_args, "User-Agent"));
 
   if(s) {
-    name = tvh_strdupa(ch->ch_name);
+    name = tvh_strdupa(channel_get_name(ch));
     pthread_mutex_unlock(&global_lock);
-    http_stream_run(hc, &sq, name, mc);
+    http_stream_run(hc, &sq, name, mc, s, &m_cfg);
     pthread_mutex_lock(&global_lock);
     subscription_unsubscribe(s);
   }
@@ -839,9 +858,11 @@ http_stream(http_connection_t *hc, const char *remain, void *opaque)
   char *components[2];
   channel_t *ch = NULL;
   service_t *service = NULL;
-#if ENABLE_LINUXDVB
-  th_dvb_mux_instance_t *tdmi = NULL;
+#if ENABLE_MPEGTS
+  mpegts_mux_t *mm = NULL;
 #endif
+  const char *str;
+  int weight = 0;
 
   hc->hc_keep_alive = 0;
 
@@ -857,27 +878,33 @@ http_stream(http_connection_t *hc, const char *remain, void *opaque)
 
   http_deescape(components[1]);
 
+  if ((str = http_arg_get(&hc->hc_req_args, "weight")))
+    weight = atoi(str);
+
   scopedgloballock();
 
   if(!strcmp(components[0], "channelid")) {
-    ch = channel_find_by_identifier(atoi(components[1]));
+    ch = channel_find_by_id(atoi(components[1]));
+  } else if(!strcmp(components[0], "channelnumber")) {
+    ch = channel_find_by_number(atoi(components[1]));
   } else if(!strcmp(components[0], "channel")) {
-    ch = channel_find_by_name(components[1], 0, 0);
+    ch = channel_find(components[1]);
   } else if(!strcmp(components[0], "service")) {
     service = service_find_by_identifier(components[1]);
-#if ENABLE_LINUXDVB
+#if ENABLE_MPEGTS
   } else if(!strcmp(components[0], "mux")) {
-    tdmi = dvb_mux_find_by_identifier(components[1]);
+    // TODO: do we want to be able to force starting a particular instance
+    mm      = mpegts_mux_find(components[1]);
 #endif
   }
 
   if(ch != NULL) {
-    return http_stream_channel(hc, ch);
+    return http_stream_channel(hc, ch, weight);
   } else if(service != NULL) {
-    return http_stream_service(hc, service);
-#if ENABLE_LINUXDVB
-  } else if(tdmi != NULL) {
-    return http_stream_tdmi(hc, tdmi);
+    return http_stream_service(hc, service, weight);
+#if ENABLE_MPEGTS
+  } else if(mm != NULL) {
+    return http_stream_mux(hc, mm, weight);
 #endif
   } else {
     http_error(hc, HTTP_STATUS_BAD_REQUEST);
@@ -1021,7 +1048,13 @@ page_imagecache(http_connection_t *hc, const char *remain, void *opaque)
   if(sscanf(remain, "%d", &id) != 1)
     return HTTP_STATUS_BAD_REQUEST;
 
-  if ((fd = imagecache_open(id)) < 0)
+  /* Fetch details */
+  pthread_mutex_lock(&global_lock);
+  fd = imagecache_open(id);
+  pthread_mutex_unlock(&global_lock);
+
+  /* Check result */
+  if (fd < 0)
     return 404;
   if (fstat(fd, &st)) {
     close(fd);
@@ -1048,7 +1081,7 @@ page_imagecache(http_connection_t *hc, const char *remain, void *opaque)
 static void
 webui_static_content(const char *http_path, const char *source)
 {
-  http_path_add(http_path, strdup(source), page_static_file,
+  http_path_add(http_path, (void *)source, page_static_file,
     ACCESS_WEB_INTERFACE);
 }
 
@@ -1094,5 +1127,12 @@ webui_init(void)
   simpleui_start();
   extjs_start();
   comet_init();
+  webui_api_init();
 
+}
+
+void
+webui_done(void)
+{
+  comet_done();
 }

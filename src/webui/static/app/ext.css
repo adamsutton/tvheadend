@@ -137,19 +137,27 @@
 }
 
 .add {
-	background-image: url(../icons/add.gif) !important;
+	background-image: url(../icons/add.png) !important;
 }
 
 .option {
-	background-image: url(../icons/plugin.gif) !important;
+	background-image: url(../icons/plugin.png) !important;
 }
 
 .remove {
-	background-image: url(../icons/delete.gif) !important;
+	background-image: url(../icons/delete.png) !important;
+}
+
+.moveup {
+	background-image: url(../icons/arrow_up.png) !important;
+}
+
+.movedown {
+	background-image: url(../icons/arrow_down.png) !important;
 }
 
 .save {
-	background-image: url(../icons/save.gif) !important;
+	background-image: url(../icons/save.png) !important;
 }
 
 .rec {
@@ -162,6 +170,10 @@
 
 .undo {
 	background-image: url(../icons/undo.png) !important;
+}
+
+.edit {
+	background-image: url(../icons/edit.png) !important;
 }
 
 .key {
@@ -268,6 +280,27 @@
 	background-image: url(../icons/rec.png) !important;
 }
 
+.bullet_add {
+	background-image: url(../icons/bullet_add.png) !important;
+}
+
+.arrow_up {
+	background-image: url(../icons/arrow_up.png) !important;
+}
+
+.arrow_down {
+	background-image: url(../icons/arrow_down.png) !important;
+}
+
+.arrow_switch {
+	background-image: url(../icons/arrow_switch.png) !important;
+
+}
+
+.stream_config {
+	background-image: url(../icons/film_edit.png) !important;
+}
+
 .x-smallhdr {
 	float: left;
 	width: 100px;
@@ -327,6 +360,27 @@
 
 .hts-doc-text img {
 	padding: 10px;
+}
+
+.tv-video-player {
+    margin-right: auto;
+    margin-left : auto;
+
+    width : 100%;
+    height: 100%;
+    background: black;
+    color: white;
+}
+
+.tv-video-idle {
+    background-image     : url(../../docresources/tvheadendlogo.png);
+    background-repeat    : no-repeat;
+    background-position  : center;
+}
+
+.tv-video-message {
+    text-align: center;
+    font-size: 150%;
 }
 
 .about-title {

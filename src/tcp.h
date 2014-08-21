@@ -20,10 +20,22 @@
 #define TCP_H_
 
 #include "htsbuf.h"
+#include "htsmsg.h"
+
+typedef struct tcp_server_ops
+{
+  void (*start)  (int fd, void **opaque,
+                     struct sockaddr_storage *peer,
+                     struct sockaddr_storage *self);
+  void (*stop)   (void *opaque);
+  void (*status) (void *opaque, htsmsg_t *m);
+  void (*cancel) (void *opaque);
+} tcp_server_ops_t;
 
 extern int tcp_preferred_address_family;
 
 void tcp_server_init(int opt_ipv6);
+void tcp_server_done(void);
 
 int tcp_connect(const char *hostname, int port, char *errbuf,
 		size_t errbufsize, int timeout);
@@ -32,12 +44,14 @@ typedef void (tcp_server_callback_t)(int fd, void *opaque,
 				     struct sockaddr_storage *peer,
 				     struct sockaddr_storage *self);
 
-void *tcp_server_create(const char *bindaddr, int port, tcp_server_callback_t *start, void *opaque);
+void *tcp_server_create(const char *bindaddr, int port, 
+  tcp_server_ops_t *ops, void *opaque);
+
+void tcp_server_delete(void *server);
 
 int tcp_read(int fd, void *buf, size_t len);
 
-int tcp_read_line(int fd, char *buf, const size_t bufsize, 
-		  htsbuf_queue_t *spill);
+char *tcp_read_line(int fd, htsbuf_queue_t *spill);
 
 int tcp_read_data(int fd, char *buf, const size_t bufsize,
 		  htsbuf_queue_t *spill);
@@ -47,5 +61,7 @@ int tcp_write_queue(int fd, htsbuf_queue_t *q);
 int tcp_read_timeout(int fd, void *buf, size_t len, int timeout);
 
 char *tcp_get_ip_str(const struct sockaddr *sa, char *s, size_t maxlen);
+
+htsmsg_t *tcp_server_connections ( void );
 
 #endif /* TCP_H_ */

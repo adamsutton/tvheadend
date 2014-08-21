@@ -77,7 +77,7 @@ static uint32_t crc_tab[256] = {
 };
 
 uint32_t
-tvh_crc32(uint8_t *data, size_t datalen, uint32_t crc)
+tvh_crc32(const uint8_t *data, size_t datalen, uint32_t crc)
 {
   while(datalen--)
     crc = (crc << 8) ^ crc_tab[((crc >> 24) ^ *data++) & 0xff];
@@ -281,8 +281,9 @@ void
 sbuf_alloc(sbuf_t *sb, int len)
 {
   if(sb->sb_data == NULL) {
-    sb->sb_size = 4000;
+    sb->sb_size = len * 4 > 4000 ? len * 4 : 4000;
     sb->sb_data = malloc(sb->sb_size);
+    return;
   }
 
   if(sb->sb_ptr + len >= sb->sb_size) {
@@ -291,10 +292,24 @@ sbuf_alloc(sbuf_t *sb, int len)
   }
 }
 
+static void
+sbuf_alloc1(sbuf_t *sb, int len)
+{
+  if(sb->sb_data == NULL) {
+    sb->sb_size = len * 4 > 4000 ? len * 4 : 4000;
+    sb->sb_data = malloc(sb->sb_size);
+    return;
+  }
+
+  sb->sb_size += len * 4;
+  sb->sb_data = realloc(sb->sb_data, sb->sb_size);
+}
+
 void
 sbuf_append(sbuf_t *sb, const void *data, int len)
 {
-  sbuf_alloc(sb, len);
+  if(sb->sb_ptr + len >= sb->sb_size)
+    sbuf_alloc1(sb, len);
   memcpy(sb->sb_data + sb->sb_ptr, data, len);
   sb->sb_ptr += len;
 }

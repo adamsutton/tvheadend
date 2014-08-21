@@ -33,6 +33,7 @@
 #include "plumbing/tsfix.h"
 #include "plumbing/globalheaders.h"
 #include "htsp_server.h"
+#include "atomic.h"
 
 #include "muxer.h"
 
@@ -90,7 +91,7 @@ dvr_rec_subscribe(dvr_entry_t *de)
 					      buf, st, flags,
 					      NULL, NULL, NULL);
 
-  pthread_create(&de->de_thread, NULL, dvr_thread, de);
+  tvhthread_create(&de->de_thread, NULL, dvr_thread, de, 0);
 }
 
 /**
@@ -205,7 +206,7 @@ pvr_generate_filename(dvr_entry_t *de, const streaming_start_t *ss)
 
 
   /* */
-  if(makedirs(path, 0777) != 0) {
+  if(makedirs(path, 0755) != 0) {
     return -1;
   }
   
@@ -287,8 +288,13 @@ dvr_rec_start(dvr_entry_t *de, const streaming_start_t *ss)
   const streaming_start_component_t *ssc;
   int i;
   dvr_config_t *cfg = dvr_config_find_by_name_default(de->de_config_name);
+  muxer_container_type_t mc;
+  muxer_config_t m_cfg;
 
-  de->de_mux = muxer_create(de->de_mc);
+  mc = de->de_mc;
+  m_cfg.dvr_flags = cfg->dvr_mux_flags;
+
+  de->de_mux = muxer_create(mc, &m_cfg);
   if(!de->de_mux) {
     dvr_rec_fatal_error(de, "Unable to create muxer");
     return -1;
@@ -422,7 +428,17 @@ dvr_thread(void *aux)
       pthread_cond_wait(&sq->sq_cond, &sq->sq_mutex);
       continue;
     }
-    
+
+    if (de->de_s && started) {
+      pktbuf_t *pb = NULL;
+      if (sm->sm_type == SMT_PACKET)
+        pb = ((th_pkt_t*)sm->sm_data)->pkt_payload;
+      else if (sm->sm_type == SMT_MPEGTS)
+        pb = sm->sm_data;
+      if (pb)
+        atomic_add(&de->de_s->ths_bytes_out, pktbuf_len(pb));
+    }
+
     TAILQ_REMOVE(&sq->sq_queue, sm, sm_link);
 
     pthread_mutex_unlock(&sq->sq_mutex);

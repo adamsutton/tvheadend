@@ -11,16 +11,15 @@ tvheadend.iptv = function(adapterId) {
 		  op : 'servicetypeList'
 	  },
 	  fields : [ 'val', 'str' ],
-	  autoLoad : false
+	  autoLoad : false,
+	  sortInfo : {
+	  	field : 'channelname',
+	  	direction : 'ASC'
+	  }
   });
 
 	var fm = Ext.form;
 
-	var enabledColumn = new Ext.grid.CheckColumn({
-		header : "Enabled",
-		dataIndex : 'enabled',
-		width : 45
-	});
 
 	var actions = new Ext.ux.grid.RowActions({
 		header : '',
@@ -44,7 +43,12 @@ tvheadend.iptv = function(adapterId) {
 	var cm = new Ext.grid.ColumnModel({
   defaultSortable: true,
   columns : [
-		enabledColumn,
+    {
+      xtype: 'checkcolumn',
+		header : "Enabled",
+		dataIndex : 'enabled',
+		width : 45
+    },
 		{
 			header : "Channel name",
 			dataIndex : 'channelname',
@@ -275,7 +279,7 @@ tvheadend.iptv = function(adapterId) {
 		stripeRows : true,
 		title : 'IPTV',
 		iconCls : 'iptv',
-		plugins : [ enabledColumn, actions ],
+		plugins : [ actions ],
 		store : store,
 		clicksToEdit : 2,
 		cm : cm,

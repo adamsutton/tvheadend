@@ -24,9 +24,13 @@
 
 void hts_settings_init(const char *confpath);
 
+void hts_settings_done(void);
+
 void hts_settings_save(htsmsg_t *record, const char *pathfmt, ...);
 
 htsmsg_t *hts_settings_load(const char *pathfmt, ...);
+
+htsmsg_t *hts_settings_load_r(int depth, const char *pathfmt, ...);
 
 void hts_settings_remove(const char *pathfmt, ...);
 

@@ -33,6 +33,7 @@ char tvh_binshasum[20];
 #include <limits.h>
 #if ENABLE_EXECINFO
 #include <execinfo.h>
+#include <dlfcn.h>
 #endif
 #include <stdio.h>
 #include <stdarg.h>
@@ -51,6 +52,10 @@ static char line1[200];
 static char tmpbuf[1024];
 static char libs[1024];
 static char self[PATH_MAX];
+
+#ifdef PLATFORM_FREEBSD
+extern char **environ;
+#endif
 
 static void
 sappend(char *buf, size_t l, const char *fmt, ...)
@@ -170,14 +175,10 @@ traphandler(int sig, siginfo_t *si, void *UC)
 
   tvhlog_spawn(LOG_ALERT, "CRASH", "Loaded libraries: %s ", libs);
 #ifdef NGREG
-  snprintf(tmpbuf, sizeof(tmpbuf), "Register dump [%d]: ", NGREG);
+  snprintf(tmpbuf, sizeof(tmpbuf), "Register dump [%d]: ", (int)NGREG);
 
   for(i = 0; i < NGREG; i++) {
-#if __WORDSIZE == 64
-    sappend(tmpbuf, sizeof(tmpbuf), "%016llx ", uc->uc_mcontext.gregs[i]);
-#else
-    sappend(tmpbuf, sizeof(tmpbuf), "%08x ", uc->uc_mcontext.gregs[i]);
-#endif
+    sappend(tmpbuf, sizeof(tmpbuf), "%016" PRIx64, uc->uc_mcontext.gregs[i]);
   }
 #endif
   tvhlog_spawn(LOG_ALERT, "CRASH", "%s", tmpbuf);
@@ -258,6 +259,7 @@ trap_init(const char *ver)
 	free(m);
       }
     }
+    close(fd);
   }
   
   snprintf(line1, sizeof(line1),

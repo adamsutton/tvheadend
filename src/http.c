@@ -25,6 +25,7 @@
 #include <stdarg.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
@@ -33,6 +34,7 @@
 #include "tcp.h"
 #include "http.h"
 #include "access.h"
+#include "notify.h"
 
 static void *http_server;
 
@@ -391,8 +393,7 @@ static int
 http_cmd_post(http_connection_t *hc, htsbuf_queue_t *spill)
 {
   http_path_t *hp;
-  char *remain, *args, *v, *argv[2];
-  int n;
+  char *remain, *args, *v;
 
   /* Set keep-alive status */
   v = http_arg_get(&hc->hc_args, "Content-Length");
@@ -419,18 +420,17 @@ http_cmd_post(http_connection_t *hc, htsbuf_queue_t *spill)
 
  /* Parse content-type */
   v = http_arg_get(&hc->hc_args, "Content-Type");
-  if(v == NULL) {
-    http_error(hc, HTTP_STATUS_BAD_REQUEST);
-    return 0;
-  }
-  n = http_tokenize(v, argv, 2, ';');
-  if(n == 0) {
-    http_error(hc, HTTP_STATUS_BAD_REQUEST);
-    return 0;
-  }
+  if(v != NULL) {
+    char  *argv[2];
+    int n = http_tokenize(v, argv, 2, ';');
+    if(n == 0) {
+      http_error(hc, HTTP_STATUS_BAD_REQUEST);
+      return 0;
+    }
 
-  if(!strcmp(argv[0], "application/x-www-form-urlencoded"))
-    http_parse_get_args(hc, hc->hc_post_data);
+    if(!strcmp(argv[0], "application/x-www-form-urlencoded"))
+      http_parse_get_args(hc, hc->hc_post_data);
+  }
 
   hp = http_resolve(hc, &remain, &args);
   if(hp == NULL) {
@@ -499,8 +499,9 @@ process_request(http_connection_t *hc, htsbuf_queue_t *spill)
       n = base64_decode(authbuf, argv[1], sizeof(authbuf) - 1);
       authbuf[n] = 0;
       if((n = http_tokenize((char *)authbuf, argv, 2, ':')) == 2) {
-	hc->hc_username = strdup(argv[0]);
-	hc->hc_password = strdup(argv[1]);
+	      hc->hc_username = strdup(argv[0]);
+	      hc->hc_password = strdup(argv[1]);
+        // No way to actually track this
       }
     }
   }
@@ -706,16 +707,13 @@ http_parse_get_args(http_connection_t *hc, char *args)
   }
 }
 
-
 /**
  *
  */
 static void
 http_serve_requests(http_connection_t *hc, htsbuf_queue_t *spill)
 {
-  char cmdline[1024];
-  char hdrline[1024];
-  char *argv[3], *c;
+  char *argv[3], *c, *cmdline = NULL, *hdrline = NULL;
   int n;
 
   htsbuf_queue_init(&hc->hc_reply, 0);
@@ -723,31 +721,36 @@ http_serve_requests(http_connection_t *hc, htsbuf_queue_t *spill)
   do {
     hc->hc_no_output  = 0;
 
-    if(tcp_read_line(hc->hc_fd, cmdline, sizeof(cmdline), spill) < 0)
-      return;
+    if (cmdline) free(cmdline);
+
+    if ((cmdline = tcp_read_line(hc->hc_fd, spill)) == NULL)
+      goto error;
 
     if((n = http_tokenize(cmdline, argv, 3, -1)) != 3)
-      return;
+      goto error;
     
     if((hc->hc_cmd = str2val(argv[0], HTTP_cmdtab)) == -1)
-      return;
+      goto error;
+
     hc->hc_url = argv[1];
     if((hc->hc_version = str2val(argv[2], HTTP_versiontab)) == -1)
-      return;
+      goto error;
 
     /* parse header */
     while(1) {
-      if(tcp_read_line(hc->hc_fd, hdrline, sizeof(hdrline), spill) < 0)
-	return;
+      if (hdrline) free(hdrline);
 
-      if(hdrline[0] == 0)
-	break; /* header complete */
+      if ((hdrline = tcp_read_line(hc->hc_fd, spill)) == NULL)
+        goto error;
+
+      if(!*hdrline)
+	      break; /* header complete */
 
       if((n = http_tokenize(hdrline, argv, 2, -1)) < 2)
-	continue;
+	      continue;
 
       if((c = strrchr(argv[0], ':')) == NULL)
-	return;
+	      goto error;
 
       *c = 0;
       http_arg_set(&hc->hc_args, argv[0], argv[1]);
@@ -771,7 +774,10 @@ http_serve_requests(http_connection_t *hc, htsbuf_queue_t *spill)
     hc->hc_password = NULL;
 
   } while(hc->hc_keep_alive);
-  
+
+error:
+  free(hdrline);
+  free(cmdline);
 }
 
 
@@ -779,13 +785,16 @@ http_serve_requests(http_connection_t *hc, htsbuf_queue_t *spill)
  *
  */
 static void
-http_serve(int fd, void *opaque, struct sockaddr_storage *peer, 
+http_serve(int fd, void **opaque, struct sockaddr_storage *peer, 
 	   struct sockaddr_storage *self)
 {
   htsbuf_queue_t spill;
   http_connection_t hc;
-  
+
+  // Note: global_lock held on entry */
+  pthread_mutex_unlock(&global_lock);
   memset(&hc, 0, sizeof(http_connection_t));
+  *opaque = &hc;
 
   TAILQ_INIT(&hc.hc_args);
   TAILQ_INIT(&hc.hc_req_args);
@@ -798,18 +807,31 @@ http_serve(int fd, void *opaque, struct sockaddr_storage *peer,
 
   http_serve_requests(&hc, &spill);
 
-  free(hc.hc_post_data);
-  free(hc.hc_username);
-  free(hc.hc_password);
-
   http_arg_flush(&hc.hc_args);
   http_arg_flush(&hc.hc_req_args);
 
   htsbuf_queue_flush(&hc.hc_reply);
   htsbuf_queue_flush(&spill);
   close(fd);
+
+  // Note: leave global_lock held for parent
+  pthread_mutex_lock(&global_lock);
+  free(hc.hc_post_data);
+  free(hc.hc_username);
+  free(hc.hc_password);
+  *opaque = NULL;
 }
 
+#if 0
+static void
+http_server_status ( void *opaque, htsmsg_t *m )
+{
+//  http_connection_t *hc = opaque;
+  htsmsg_add_str(m, "type", "HTTP");
+  if (hc->hc_username)
+    htsmsg_add_str(m, "user", hc->hc_username);
+}
+#endif
 
 /**
  *  Fire up HTTP server
@@ -817,5 +839,25 @@ http_serve(int fd, void *opaque, struct sockaddr_storage *peer,
 void
 http_server_init(const char *bindaddr)
 {
-  http_server = tcp_server_create(bindaddr, tvheadend_webui_port, http_serve, NULL);
+  static tcp_server_ops_t ops = {
+    .start  = http_serve,
+    .stop   = NULL,
+    .status = NULL,
+  };
+  http_server = tcp_server_create(bindaddr, tvheadend_webui_port, &ops, NULL);
+}
+
+void
+http_server_done(void)
+{
+  http_path_t *hp;
+
+  pthread_mutex_lock(&global_lock);
+  while ((hp = LIST_FIRST(&http_paths)) != NULL) {
+    LIST_REMOVE(hp, hp_link);
+    free((void *)hp->hp_path);
+    free(hp);
+  }
+  pthread_mutex_unlock(&global_lock);
+  tcp_server_delete(http_server);
 }

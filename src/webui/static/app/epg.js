@@ -40,6 +40,8 @@ tvheadend.epgDetails = function(event) {
 	content += '</div>';
 	content += '<div class="x-epg-desc">' + event.episode + '</div>';
 	content += '<div class="x-epg-desc">' + event.description + '</div>';
+	content += '<div class="x-epg-meta">' + event.starrating + '</div>';
+	content += '<div class="x-epg-meta">' + event.agerating + '</div>';
 	content += '<div class="x-epg-meta">' + tvheadend.contentGroupLookupName(event.contenttype) + '</div>';
 
 	if (event.ext_desc != null) 
@@ -51,13 +53,7 @@ tvheadend.epgDetails = function(event) {
 	if (event.ext_text != null) 
 		content += '<div class="x-epg-meta">' + event.ext_text + '</div>';
 
-	content += '<div class="x-epg-meta"><a target="_blank" href="http://akas.imdb.org/find?q=' + event.title + '">Search IMDB</a></div>'
-
-	now = new Date();
-	if (event.start < now && event.end > now) {
-		content += "<div class=\"x-epg-meta\"><a href=\"javascript:tvheadend.VLC('stream/channelid/" + event.channelid + "')\">Play</a>" + "</div>";
-	}
-
+	content += '<div class="x-epg-meta"><a target="_blank" href="http://akas.imdb.com/find?q=' + event.title + '">Search IMDB</a></div>'
 	content += '<div id="related"></div>';
 	content += '<div id="altbcast"></div>';
 
@@ -229,6 +225,10 @@ tvheadend.epg = function() {
 		}, {
 			name : 'duration'
 		}, {
+			name : 'starrating'
+		}, {
+			name : 'agerating'
+		}, {
 			name : 'contenttype'
 		}, {
 			name : 'schedstate'
@@ -250,7 +250,7 @@ tvheadend.epg = function() {
 		setMetaAttr(meta, record);
 
 		var dt = new Date(value);
-		return dt.format('l H:i');
+		return dt.format('D, M d, H:i');
 	}
 
 	function renderDuration(value, meta, record, rowIndex, colIndex, store) {
@@ -272,11 +272,17 @@ tvheadend.epg = function() {
 		}
 	}
 
-	function renderText(value, meta, record, rowIndex, colIndex, store) {
-		setMetaAttr(meta, record);
+    function renderText(value, meta, record, rowIndex, colIndex, store) {
+        setMetaAttr(meta, record);
 
-		return value;
-	}
+        return value;
+    }
+
+    function renderInt(value, meta, record, rowIndex, colIndex, store) {
+        setMetaAttr(meta, record);
+
+        return '' + value;
+    }
 
 	var epgCm = new Ext.grid.ColumnModel([ actions, {
 		width : 250,
@@ -321,6 +327,18 @@ tvheadend.epg = function() {
 		header : "Channel",
 		dataIndex : 'channel',
 		renderer : renderText
+    }, {
+        width : 50,
+        id : 'starrating',
+        header : "Stars",
+        dataIndex : 'starrating',
+        renderer : renderInt
+    }, {
+        width : 50,
+        id : 'agerating',
+        header : "Age",
+        dataIndex : 'agerating',
+        renderer : renderInt
 	}, {
 		width : 250,
 		id : 'contenttype',
@@ -343,7 +361,7 @@ tvheadend.epg = function() {
 	var epgFilterChannels = new Ext.form.ComboBox({
 		loadingText : 'Loading...',
 		width : 200,
-		displayField : 'name',
+		displayField : 'val',
 		store : tvheadend.channels,
 		mode : 'local',
 		editable : true,
@@ -394,8 +412,8 @@ tvheadend.epg = function() {
 	}
 
 	epgFilterChannels.on('select', function(c, r) {
-		if (epgStore.baseParams.channel != r.data.name) {
-			epgStore.baseParams.channel = r.data.name;
+		if (epgStore.baseParams.channel != r.data.key) {
+			epgStore.baseParams.channel = r.data.key;
 			epgStore.reload();
 		}
 	});
@@ -433,6 +451,8 @@ tvheadend.epg = function() {
 	});
 
 	var panel = new Ext.ux.grid.livegrid.GridPanel({
+		stateful: true,
+		stateId : 'epggrid',
 		enableDragDrop : false,
 		cm : epgCm,
 		plugins : [ actions ],
@@ -459,7 +479,7 @@ tvheadend.epg = function() {
 				text : 'Watch TV',
 				iconCls : 'eye',
 				handler : function() {
-					new tvheadend.VLC();
+					new tvheadend.VideoPlayer();
 				}
 			},
 			'-',

@@ -1,34 +1,53 @@
 tvheadend.capmteditor = function() {
 	var fm = Ext.form;
 
-	var enabledColumn = new Ext.grid.CheckColumn({
-		header : "Enabled",
-		dataIndex : 'enabled',
-		width : 60
-	});
-
-	var oscamColumn = new Ext.grid.CheckColumn({
-		header : "OSCam mode",
-		dataIndex : 'oscam',
-		width : 60
-	});
-
 	function setMetaAttr(meta, record) {
 		var enabled = record.get('enabled');
 		if (!enabled) return;
 
 		var connected = record.get('connected');
-		if (connected == 1) {
+		if (connected == 2) {
 			meta.attr = 'style="color:green;"';
+		}
+		else if (connected == 1) {
+			meta.attr = 'style="color:orange;"';
 		}
 		else {
 			meta.attr = 'style="color:red;"';
 		}
 	}
+	var selectMode = new Ext.form.ComboBox({
+		displayField:'name',
+		valueField: 'res',
+		value: 2,
+		mode: 'local',
+		editable: false,
+		triggerAction: 'all',
+		emptyText: 'Select mode...',
+		store: new Ext.data.SimpleStore({
+			fields: ['res','name'],
+			id: 0,
+			data: [
+				['2','Recent OSCam (svn rev >= 9095)'],
+				['1','Older OSCam'],
+				['0','Wrapper (capmt_ca.so)']
+			]
+		})
+	});
 
 	var cm = new Ext.grid.ColumnModel({
   defaultSortable: true,
-  columns: [ enabledColumn, {
+          columns: [ {
+            xtype: 'checkcolumn',
+		header : "Enabled",
+		dataIndex : 'enabled',
+		width : 60
+	}, {
+		header: "Mode",
+		dataIndex: 'oscam',
+		width: 150,
+		editor: selectMode
+	}, {
 		header : "Camd.socket Filename",
 		dataIndex : 'camdfilename',
 		width : 200,
@@ -49,7 +68,7 @@ tvheadend.capmteditor = function() {
 		editor : new fm.TextField({
 			allowBlank : false
 		})
-	}, oscamColumn, {
+	}, {
 		header : "Comment",
 		dataIndex : 'comment',
 		width : 400,
@@ -75,7 +94,7 @@ tvheadend.capmteditor = function() {
 		}
 	});
 
-	tvheadend.comet.on('capmtStatus', function(server) {
+	tvheadend.comet.on('capmt', function(server) {
 		var rec = store.getById(server.id);
 		if (rec) {
 			rec.set('connected', server.connected);
@@ -83,5 +102,5 @@ tvheadend.capmteditor = function() {
 	});
 
 	return new tvheadend.tableEditor('Capmt Connections', 'capmt', cm, rec,
-		[ enabledColumn, oscamColumn ], store, 'config_capmt.html', 'key');
+		[ ], store, 'config_capmt.html', 'key');
 }

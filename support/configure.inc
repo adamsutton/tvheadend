@@ -256,7 +256,11 @@ function check_cc
   cat >$TMPDIR/$$.c <<EOF
 $hdr
 int main() {
+#ifdef TEST
+  return TEST();
+#else
   return 0;
+#endif
 }
 EOF
   $CC $CFLAGS $LDFLAGS $TMPDIR/$$.c -o $TMPDIR/$$.bin $opt &> /dev/null
